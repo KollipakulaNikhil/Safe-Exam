@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # ExamGuard 🛡️
 ### Real-Time Examination Integrity Monitoring System
 
@@ -77,10 +78,56 @@ nikhil/
 ├── index.html
 ├── vite.config.js
 └── package.json
+=======
+# ExamGuard — MERN Full-Stack Application
+
+ExamGuard is a real-time examination integrity monitoring system built with the **MERN Stack** (MongoDB, Express, React, Node.js). It provides a secure environment for students to take exams (MCQs, coding challenges, formatted file uploads) while proctors can monitor them in real-time.
+
+## Features
+
+### 🎓 Student Flow
+- **Lobby**: Pre-exam system checks (Camera, Mic, Fullscreen) and exam rules.
+- **Exam Interface**: 
+  - Real-time MCQ answering.
+  - Built-in Monaco Editor for coding questions with execution simulation.
+  - Drag-and-drop file uploads for assignment questions.
+  - Strict security monitoring (tab switches, right-click, F12).
+- **Results**: Direct post-exam scorecard with performance breakdown and integrity log.
+
+### 🛡️ Proctor Flow
+- **Live Dashboard**: Real-time stats on active students, risk scores, and flagged users.
+- **Event Log**: Live Socket.io feed of student activities (tab switching, idling, answering).
+- **Student Inspector**: Detailed drawer showing individual student's live progress, actual answers, timeline, and risk metrics.
+- **Control Actions**: Proctors can explicitly Flag or Terminate a student's session.
+
+---
+
+## 🏗️ Architecture
+
+```text
+nikhil/
+├── client/                     # React + Vite Frontend
+│   ├── src/
+│   │   ├── api/api.js          # Axios API service layer
+│   │   ├── components/         # Reusable UI (Header, Badge, etc.)
+│   │   ├── pages/              # Page components
+│   │   ├── AuthContext.jsx     # JWT Authentication State
+│   │   └── SocketContext.jsx   # Real-time connection State
+│
+├── server/                     # Express + Node.js Backend
+│   ├── config/db.js            # MongoDB connection
+│   ├── middleware/             # JWT verification & Multer uploads
+│   ├── models/                 # Mongoose Schemas (User, Exam, Submission, Event)
+│   ├── routes/                 # REST API endpoints
+│   ├── server.js               # Entry point
+│   ├── socket.js               # Socket.io event handles
+│   └── seed.js                 # Database seeder
+>>>>>>> 24870b6 (Updated file)
 ```
 
 ---
 
+<<<<<<< HEAD
 ## ✨ Features
 
 ### 🎓 Student Flow
@@ -290,3 +337,52 @@ GitHub: [@KollipakulaNikhil](https://github.com/KollipakulaNikhil)
 ## 📜 License
 
 This project is for educational purposes. Feel free to use and modify.
+=======
+## 🚀 How to Run Locally
+
+### Prerequisites
+1. **Node.js** v18+
+2. **MongoDB** running locally on port `27017`
+
+### Setup Instructions
+
+1. **Install all dependencies** (installs root and client):
+   ```bash
+   npm run install-all
+   ```
+
+2. **Seed the database** (Creates demo users, a test exam, and mock submissions):
+   ```bash
+   npm run seed
+   ```
+
+3. **Start the application**:
+   ```bash
+   npm run dev
+   ```
+
+The application will start on:
+- Frontend: **`http://localhost:5173`**
+- Backend API: **`http://localhost:5000`**
+
+### Demo Credentials
+
+Use these to test the application after running the seed script:
+
+**Student**
+- Email: `student@exam.com`
+- Password: `student123`
+
+**Proctor**
+- Email: `proctor@exam.com`
+- Password: `proctor123`
+
+---
+
+## 🛠️ Technology Stack
+- **Frontend**: React (Vite), React Router v7, plain CSS (No UI frameworks used per requirements), Lucide-React, Monaco Editor.
+- **Backend**: Node.js, Express, Socket.io, Multer (file uploads).
+- **Database**: MongoDB, Mongoose.
+- **Authentication**: JWT (JSON Web Tokens), Bcryptjs.
+- **Real-time**: Socket.io (WebSocket).
+>>>>>>> 24870b6 (Updated file)
