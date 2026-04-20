@@ -33,12 +33,20 @@ export default function setupSocket(io) {
         // Update submission integrity
         const submission = await Submission.findById(submissionId);
         if (submission) {
+          submission.lastSeen = new Date();  // mark student as active
           if (type === 'tab_switch') {
             submission.integrity.tabSwitches += 1;
           }
           // Increase risk score based on severity
           const riskIncrease = severity === 'CRITICAL' ? 15 : severity === 'WARN' ? 5 : 0;
           submission.integrity.riskScore = Math.min(100, submission.integrity.riskScore + riskIncrease);
+
+          // Auto-flag students caught using remote desktop immediately
+          if (type === 'remote_desktop') {
+            submission.integrity.flagged = true;
+            submission.integrity.flags += 1;
+            submission.integrity.riskScore = Math.min(100, submission.integrity.riskScore + 30);
+          }
 
           // Auto-flag if risk is high
           if (submission.integrity.riskScore >= 60) {
@@ -47,7 +55,7 @@ export default function setupSocket(io) {
           await submission.save();
         }
 
-        // Populate and broadcast to proctors in the room
+        // Populate and broadcast to everyone in the room
         const populatedEvent = await Event.findById(event._id).populate('student', 'name email');
 
         io.to(`exam:${examId}`).emit('new_event', {
@@ -60,14 +68,34 @@ export default function setupSocket(io) {
           } : null,
         });
 
+        // ── SPECIAL: Remote desktop / screen share → instant high-priority proctor alert ──
+        if (type === 'remote_desktop') {
+          const studentName = populatedEvent?.student?.name || 'Unknown Student';
+          const studentEmail = populatedEvent?.student?.email || '';
+          console.log(`🚨 Remote desktop detected: ${studentName} in exam ${examId}`);
+          io.to(`exam:${examId}`).emit('remote_desktop_alert', {
+            studentName,
+            studentEmail,
+            submissionId,
+            description,
+            detectedAt: new Date().toISOString(),
+          });
+        }
+
       } catch (err) {
         console.error('Socket violation error:', err.message);
       }
     });
 
-    // Student saved an answer
-    socket.on('answer_saved', (data) => {
-      const { examId, studentName, questionNum, answeredCount, totalQuestions } = data;
+    // Student saved an answer — update lastSeen
+    socket.on('answer_saved', async (data) => {
+      const { examId, studentName, questionNum, answeredCount, totalQuestions, submissionId } = data;
+      // Update lastSeen in DB
+      if (submissionId) {
+        try {
+          await Submission.findByIdAndUpdate(submissionId, { lastSeen: new Date() });
+        } catch (_) {}
+      }
       io.to(`exam:${examId}`).emit('student_progress', {
         studentName,
         questionNum,

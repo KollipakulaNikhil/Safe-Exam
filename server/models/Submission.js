@@ -36,6 +36,7 @@ const submissionSchema = new mongoose.Schema({
     flagged:     { type: Boolean, default: false },
   },
   ip: { type: String },
+  lastSeen: { type: Date, default: Date.now },  // updated on every answer/violation
 }, { timestamps: true });
 
 // Virtual: answered count

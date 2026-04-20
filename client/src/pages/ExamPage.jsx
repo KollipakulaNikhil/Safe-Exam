@@ -144,16 +144,16 @@ function useExamSecurity({ examId, submissionId, socket, onViolation, onToast })
       // F12 – DevTools
       if (e.key === 'F12') {
         e.preventDefault();
-        onToast('⛔ Developer tools are restricted during exams', 'danger');
-        onViolation('devtools', 'CRITICAL', 'F12 developer tools key pressed');
+        onToast('⚠️ Developer tools are not allowed — warning issued', 'warn');
+        onViolation('devtools', 'WARN', 'F12 developer tools key pressed');
         return;
       }
 
       // Ctrl+Shift+I / Ctrl+Shift+J / Ctrl+Shift+C – DevTools variants
       if (ctrl && shift && ['I', 'J', 'C'].includes(key)) {
         e.preventDefault();
-        onToast('⛔ Developer tools are restricted', 'danger');
-        onViolation('devtools', 'CRITICAL', 'DevTools shortcut blocked');
+        onToast('⚠️ Developer tools are not allowed — warning issued', 'warn');
+        onViolation('devtools', 'WARN', 'DevTools shortcut blocked');
         return;
       }
 
@@ -237,8 +237,8 @@ function useExamSecurity({ examId, submissionId, socket, onViolation, onToast })
       if (nowOpen && !open) {
         open = true;
         devtoolsRef.current = true;
-        onToast('⛔ Developer tools detected — violation logged', 'danger');
-        onViolation('devtools', 'CRITICAL', 'Browser developer tools detected (window size changed)');
+        onToast('⚠️ Developer tools detected — warning issued', 'warn');
+        onViolation('devtools', 'WARN', 'Browser developer tools detected (window size changed)');
       }
       if (!nowOpen && open) {
         open = false;
@@ -274,18 +274,19 @@ function useExamSecurity({ examId, submissionId, socket, onViolation, onToast })
         for (const node of m.addedNodes) {
           if (node.nodeType !== 1) continue; // element nodes only
           const id = node.id || '';
-          const cls = node.className || '';
+          const cls = (typeof node.className === 'string' ? node.className : '') || '';
           // Common extension injection patterns
           const suspicious = [
             'grammarly', 'honey', 'loom', 'dashlane', 'lastpass',
             '__aiPrompt', 'gpt', 'copilot', 'extension',
           ];
           const isSuspicious = suspicious.some(s =>
-            id.toLowerCase().includes(s) || cls.toLowerCase?.().includes(s)
+            id.toLowerCase().includes(s) || cls.toLowerCase().includes(s)
           );
           if (isSuspicious && !knownIds.has(id)) {
-            onToast('⚠️ Browser extension activity detected', 'danger');
-            onViolation('paste', 'CRITICAL', `Suspicious extension activity detected: ${id || cls}`);
+            const name = id || cls.split(' ')[0] || 'unknown';
+            onToast(`⚠️ Extension detected (${name}) — warning issued`, 'warn');
+            onViolation('extension', 'WARN', `Browser extension detected and blocked: ${name}`);
           }
         }
       }
@@ -305,8 +306,67 @@ function useExamSecurity({ examId, submissionId, socket, onViolation, onToast })
     return () => document.removeEventListener('dragstart', blockDrag);
   }, []);
 
+  // ── 11. Remote Desktop / Screen-Share detection (RustDesk, AnyDesk, TeamViewer etc.) ──
+  useEffect(() => {
+    // ─ A. Block browser-level getDisplayMedia (screen capture API) ─
+    let originalGetDisplayMedia = null;
+    if (navigator.mediaDevices?.getDisplayMedia) {
+      originalGetDisplayMedia = navigator.mediaDevices.getDisplayMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getDisplayMedia = async (...args) => {
+        onToast('⚠️ Screen sharing is not allowed — warning issued', 'warn');
+        onViolation('remote_desktop', 'WARN', 'Screen capture attempt blocked via browser API (getDisplayMedia)');
+        throw new DOMException('Screen sharing is not permitted during the exam', 'NotAllowedError');
+      };
+    }
+
+    // ─ B. Screen resolution change monitor (RustDesk changes res on connect) ─
+    let initW = window.screen.width;
+    let initH = window.screen.height;
+    const resInterval = setInterval(() => {
+      const w = window.screen.width;
+      const h = window.screen.height;
+      if (w !== initW || h !== initH) {
+        onToast(`⚠️ Screen resolution changed — possible remote desktop detected`, 'warn');
+        onViolation('remote_desktop', 'WARN',
+          `Screen resolution changed from ${initW}×${initH} to ${w}×${h} — remote desktop suspected`);
+        initW = w; initH = h;
+      }
+    }, 2000);
+
+    // ─ C. Pointer jump detection (remote mouse teleports, local mouse moves smoothly) ─
+    let lastX = null, lastY = null;
+    const JUMP_THRESHOLD = 400; // px — remote pointer teleports, local pointer doesn't
+    function onMouseMove(e) {
+      if (lastX !== null) {
+        const dx = Math.abs(e.clientX - lastX);
+        const dy = Math.abs(e.clientY - lastY);
+        if (dx + dy > JUMP_THRESHOLD) {
+          onToast('⚠️ Remote control pointer detected — warning issued', 'warn');
+          onViolation('remote_desktop', 'WARN',
+            `Abrupt pointer jump of ${Math.round(dx + dy)}px detected — remote control suspected`);
+          lastX = null; lastY = null;
+          return;
+        }
+      }
+      lastX = e.clientX; lastY = e.clientY;
+    }
+    document.addEventListener('mousemove', onMouseMove, { passive: true });
+
+    // ─ D. Clipboard change via remote (remote tools often paste silently) ─
+    // Already handled by existing paste/copy blocking above.
+
+    return () => {
+      if (originalGetDisplayMedia) {
+        navigator.mediaDevices.getDisplayMedia = originalGetDisplayMedia;
+      }
+      clearInterval(resInterval);
+      document.removeEventListener('mousemove', onMouseMove);
+    };
+  }, [onToast, onViolation]);
+
   return { isFullscreen, tabSwitchCount, enterFullscreen };
 }
+
 
 /* ── Fullscreen Warning Overlay ── */
 function FullscreenWarning({ onEnter }) {
@@ -606,6 +666,49 @@ function SubmitModal({ questions, answers, onClose, onSubmit, submitting }) {
 /* ═══════════════════════════════════════════
    MAIN: Exam Page
    ═══════════════════════════════════════════ */
+/* ── Warning Limit Overlay ── */
+function WarningLimitOverlay({ warnCount, maxWarnings, onSubmit }) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 10000,
+      background: 'rgba(8,11,20,0.98)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      backdropFilter: 'blur(12px)',
+    }}>
+      <div style={{ textAlign: 'center', maxWidth: 460, padding: '0 24px' }}>
+        <div style={{
+          width: 80, height: 80, borderRadius: '50%',
+          background: 'var(--danger-bg)', border: '2px solid var(--danger-border)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 20px',
+        }}>
+          <AlertTriangle size={36} color="var(--danger)" />
+        </div>
+        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: 'var(--danger)' }}>
+          ⛔ Exam Terminated
+        </h2>
+        <p style={{ color: 'var(--text-2)', fontSize: 14, lineHeight: 1.8, marginBottom: 8 }}>
+          You have received <strong style={{ color: 'var(--danger)' }}>{warnCount} warnings</strong> — the maximum allowed is {maxWarnings}.
+        </p>
+        <p style={{ color: 'var(--text-3)', fontSize: 13, lineHeight: 1.7, marginBottom: 28 }}>
+          Your exam is being submitted automatically. Violations have been recorded and reported to your proctor.
+        </p>
+        <div style={{
+          padding: '12px 16px',
+          background: 'var(--danger-bg)', border: '1px solid var(--danger-border)',
+          borderRadius: 'var(--radius-md)', marginBottom: 24,
+          fontSize: 13, color: 'var(--danger)', fontFamily: 'var(--font-mono)',
+        }}>
+          Auto-submitting in 3 seconds...
+        </div>
+        <button className="btn btn-danger" style={{ width: '100%', justifyContent: 'center' }} onClick={onSubmit}>
+          <Send size={14} /> Submit Now
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function ExamPage() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -627,10 +730,18 @@ export default function ExamPage() {
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // Warning tracking — auto-submit at MAX_WARNINGS
+  const MAX_WARNINGS = 3;
+  const [warnCount, setWarnCount] = useState(0);
+  const [showWarningLimit, setShowWarningLimit] = useState(false);
+  const warnCountRef = useRef(0);
+
   // Refs that security callbacks need without re-registering listeners
   const submissionIdRef = useRef(null);
   const examIdRef = useRef(null);
   const socketRef = useRef(null);
+  // Ref to always hold the latest handleSubmitExam (avoids stale closures in setTimeout)
+  const handleSubmitExamRef = useRef(null);
 
   useEffect(() => { submissionIdRef.current = submissionId; }, [submissionId]);
   useEffect(() => { examIdRef.current = examId; }, [examId]);
@@ -649,7 +760,25 @@ export default function ExamPage() {
     if (sock && sid && eid) {
       sock.emit('violation', { examId: eid, submissionId: sid, type, severity, description });
     }
-  }, []);
+    // Every WARN counts toward the 3-warning auto-submit limit
+    if (severity === 'WARN') {
+      warnCountRef.current += 1;
+      const newCount = warnCountRef.current;
+      setWarnCount(newCount);
+      if (newCount >= MAX_WARNINGS) {
+        setShowWarningLimit(true);
+        // Auto-submit after 3 seconds using ref to avoid stale closure
+        setTimeout(() => {
+          handleSubmitExamRef.current?.();
+        }, 3000);
+      } else {
+        addToast(
+          `⚠️ Warning ${newCount}/${MAX_WARNINGS} — ${MAX_WARNINGS - newCount} remaining before auto-submit`,
+          'warn'
+        );
+      }
+    }
+  }, [addToast]);
 
   // ── Security system ──
   const { isFullscreen, tabSwitchCount, enterFullscreen } = useExamSecurity({
@@ -721,6 +850,7 @@ export default function ExamPage() {
           examId, studentName: user?.name,
           questionNum, answeredCount: res.data.answeredCount,
           totalQuestions: questions.length,
+          submissionId,  // needed for lastSeen tracking
         });
       }
     } catch (err) {
@@ -728,26 +858,33 @@ export default function ExamPage() {
     }
   }
 
-  async function handleSubmitExam() {
-    if (!submissionId) return;
+  const handleSubmitExam = useCallback(async () => {
+    const sid = submissionIdRef.current;
+    if (!sid) return;
     setSubmitting(true);
     try {
-      await apiSubmitExam(submissionId);
-      if (socket && examId) {
-        socket.emit('exam_submitted', { examId, studentName: user?.name, submissionId });
+      await apiSubmitExam(sid);
+      const sock = socketRef.current;
+      const eid = examIdRef.current;
+      if (sock && eid) {
+        sock.emit('exam_submitted', { examId: eid, studentName: user?.name, submissionId: sid });
       }
       // Exit fullscreen gracefully
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
-      localStorage.setItem('examguard_result', JSON.stringify({ submissionId }));
+      localStorage.setItem('examguard_result', JSON.stringify({ submissionId: sid }));
       localStorage.removeItem('examguard_submission');
       navigate('/result');
     } catch (err) {
       addToast(err.response?.data?.error || 'Failed to submit exam', 'danger');
       setSubmitting(false);
     }
-  }
+  }, [user, navigate, addToast]);
+
+  // Keep ref always pointing to latest handleSubmitExam (used inside setTimeout closures)
+  useEffect(() => { handleSubmitExamRef.current = handleSubmitExam; }, [handleSubmitExam]);
+
 
   function handleTabClick(type) {
     setActiveTab(type);
@@ -785,8 +922,17 @@ export default function ExamPage() {
       MozUserSelect: 'none',
     }}>
 
-      {/* Fullscreen enforce overlay */}
-      {!isFullscreen && exam && <FullscreenWarning onEnter={enterFullscreen} />}
+      {/* 3-warning auto-submit overlay */}
+      {showWarningLimit && (
+        <WarningLimitOverlay
+          warnCount={warnCount}
+          maxWarnings={MAX_WARNINGS}
+          onSubmit={handleSubmitExam}
+        />
+      )}
+
+      {/* Fullscreen enforce overlay — only show if warning limit not triggered */}
+      {!isFullscreen && exam && !showWarningLimit && <FullscreenWarning onEnter={enterFullscreen} />}
 
       {/* Toast notifications */}
       <div className="toast-wrapper">
@@ -828,7 +974,18 @@ export default function ExamPage() {
           <Clock size={16} />{formatTime(timeRemaining)}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {/* Security indicators */}
+          {/* Warning counter */}
+          <span style={{
+            fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700,
+            color: warnCount >= MAX_WARNINGS ? 'var(--danger)' : warnCount > 0 ? 'var(--warning)' : 'var(--text-3)',
+            display: 'flex', alignItems: 'center', gap: 4,
+            padding: '3px 8px', borderRadius: 6,
+            background: warnCount > 0 ? (warnCount >= MAX_WARNINGS ? 'var(--danger-bg)' : 'var(--warning-bg)') : 'transparent',
+            border: warnCount > 0 ? `1px solid ${warnCount >= MAX_WARNINGS ? 'var(--danger-border)' : 'var(--warning-border)'}` : 'none',
+          }}>
+            <AlertTriangle size={10} /> Warnings: {warnCount}/{MAX_WARNINGS}
+          </span>
+          {/* Fullscreen indicator */}
           <span style={{
             fontSize: 10, fontFamily: 'var(--font-mono)', fontWeight: 700,
             color: isFullscreen ? 'var(--success)' : 'var(--danger)',
@@ -837,7 +994,7 @@ export default function ExamPage() {
             <Maximize size={11} />{isFullscreen ? 'SECURE' : 'NOT FULLSCREEN'}
           </span>
           <span style={{ fontSize: 10, fontFamily: 'var(--font-mono)', color: tabSwitchCount > 0 ? 'var(--warning)' : 'var(--text-3)' }}>
-            Switches: {tabSwitchCount}
+            Tabs: {tabSwitchCount}
           </span>
           <button className="btn btn-primary btn-sm" onClick={() => setShowSubmitModal(true)}>
             <Send size={12} /> Submit

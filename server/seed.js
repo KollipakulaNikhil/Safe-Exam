@@ -151,6 +151,10 @@ async function seed() {
           flagged: profile.flagged,
         },
         ip: `192.168.1.${101 + profile.idx}`,
+        // Set lastSeen: high-risk and many-answered students appear active; others idle
+        lastSeen: profile.answered >= 8 || profile.risk > 40
+          ? new Date(Date.now() - 60000)   // 1 minute ago — appears ACTIVE
+          : new Date(Date.now() - 3600000), // 1 hour ago — appears IDLE
       });
 
       // Create some violation events for high-risk students

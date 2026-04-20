@@ -17,22 +17,37 @@ router.get('/dashboard/:examId', protect, requireRole('proctor'), async (req, re
       .sort({ startedAt: -1 });
 
     // Build student data for dashboard
-    const students = submissions.map(sub => ({
-      id: sub._id,
-      studentId: sub.student._id,
-      name: sub.student.name,
-      email: sub.student.email,
-      status: sub.status === 'submitted' ? 'submitted' :
-              sub.integrity.flagged ? 'flagged' :
-              sub.integrity.tabSwitches > 2 ? 'flagged' : 'active',
-      risk: sub.integrity.riskScore,
-      tabs: sub.integrity.tabSwitches,
-      answered: sub.answers.length,
-      flagged: sub.integrity.flagged,
-      ip: sub.ip || '—',
-      startedAt: sub.startedAt,
-      submittedAt: sub.submittedAt,
-    }));
+    const now = new Date();
+    const ACTIVE_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+
+    const students = submissions.map(sub => {
+      const isRecentlyActive = sub.lastSeen && (now - new Date(sub.lastSeen)) < ACTIVE_THRESHOLD_MS;
+      let status;
+      if (sub.status === 'submitted') {
+        status = 'submitted';
+      } else if (sub.integrity.flagged || sub.integrity.tabSwitches > 2) {
+        status = 'flagged';
+      } else if (isRecentlyActive) {
+        status = 'active';
+      } else {
+        status = 'idle';  // in-progress but no recent activity
+      }
+      return {
+        id: sub._id,
+        studentId: sub.student._id,
+        name: sub.student.name,
+        email: sub.student.email,
+        status,
+        risk: sub.integrity.riskScore,
+        tabs: sub.integrity.tabSwitches,
+        answered: sub.answers.length,
+        flagged: sub.integrity.flagged,
+        ip: sub.ip || '—',
+        startedAt: sub.startedAt,
+        submittedAt: sub.submittedAt,
+        lastSeen: sub.lastSeen,
+      };
+    });
 
     // Stats
     const activeCount = students.filter(s => s.status === 'active').length;

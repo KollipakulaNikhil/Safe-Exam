@@ -22,10 +22,18 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const httpServer = createServer(app);
 
+// Allowed origins — covers localhost + any *.vercel.app + custom domain
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  /\.vercel\.app$/,          // any *.vercel.app domain
+  process.env.CLIENT_URL,    // set your custom domain here in Vercel env vars
+].filter(Boolean);
+
 // Socket.io setup
 const io = new Server(httpServer, {
   cors: {
-    origin: ['http://localhost:5173', 'http://localhost:3000'],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     credentials: true,
   },
@@ -33,25 +41,29 @@ const io = new Server(httpServer, {
 
 // Security headers
 app.use((req, res, next) => {
-  // Prevent clickjacking
   res.setHeader('X-Frame-Options', 'DENY');
-  // Prevent MIME sniffing
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Disable browser features that aid cheating
   res.setHeader('Permissions-Policy', 'clipboard-read=(), clipboard-write=()');
-  // Referrer policy
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   next();
 });
 
-// Middleware
-app.use(cors({
-  origin: ['http://localhost:5173', 'http://localhost:3000'],
-  credentials: true,
-}));
+// Core middleware
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Lazy DB connection — runs before every request in serverless environments
+// In local mode, connectDB() is called once in start() before the server opens
+let dbConnected = false;
+app.use(async (req, res, next) => {
+  if (!dbConnected) {
+    await connectDB();
+    dbConnected = true;
+  }
+  next();
+});
 
 // Serve uploaded files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -78,16 +90,20 @@ app.use((err, req, res, next) => {
 // Setup Socket.io handlers
 setupSocket(io);
 
-// Start server
-const PORT = process.env.PORT || 5000;
+// ─── Deployment ───────────────────────────────────────────────────────────────
 
-async function start() {
-  await connectDB();
-  httpServer.listen(PORT, () => {
-    console.log(`\n🚀 ExamGuard server running on port ${PORT}`);
-    console.log(`   API: http://localhost:${PORT}/api`);
-    console.log(`   Health: http://localhost:${PORT}/api/health\n`);
+// Export httpServer so Vercel's @vercel/node runtime can handle requests
+export default httpServer;
+
+// Only bind to a port when running locally (Vercel sets process.env.VERCEL=1)
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 5000;
+  dbConnected = true; // mark as connected (start() handles it)
+  connectDB().then(() => {
+    httpServer.listen(PORT, () => {
+      console.log(`\n🚀 ExamGuard server running on port ${PORT}`);
+      console.log(`   API: http://localhost:${PORT}/api`);
+      console.log(`   Health: http://localhost:${PORT}/api/health\n`);
+    });
   });
 }
-
-start();

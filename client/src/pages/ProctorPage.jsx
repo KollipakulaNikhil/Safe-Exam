@@ -7,7 +7,7 @@ import Editor from '@monaco-editor/react';
 import {
   Shield, Users, AlertTriangle, Activity, LogOut, Clock,
   Search, BarChart3, X, Flag, XCircle, Download, FileText,
-  Code2, Upload, RefreshCw,
+  Code2, Upload, RefreshCw, Monitor,
 } from 'lucide-react';
 import { Avatar, Badge, ProgressBar, StatusDot, InfoRow } from '../components/UI';
 
@@ -210,6 +210,8 @@ export default function ProctorPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [evFilter, setEvFilter] = useState('all');
   const [refreshing, setRefreshing] = useState(false);
+  // Remote desktop alerts — shown as flashing banners
+  const [rdAlerts, setRdAlerts] = useState([]);
 
   // Load exam list, then dashboard
   useEffect(() => {
@@ -245,6 +247,16 @@ export default function ProctorPage() {
         }
       });
 
+      // ── Remote desktop high-priority alert ──
+      socket.on('remote_desktop_alert', (data) => {
+        const alert = { ...data, id: Date.now() + Math.random() };
+        setRdAlerts(prev => [alert, ...prev.slice(0, 4)]); // keep last 5
+        // Auto-dismiss after 30 seconds
+        setTimeout(() => {
+          setRdAlerts(prev => prev.filter(a => a.id !== alert.id));
+        }, 30000);
+      });
+
       socket.on('student_submitted', () => { if (examId) loadDashboard(examId); });
       socket.on('student_progress', (data) => {
         setDashData(prev => {
@@ -256,7 +268,7 @@ export default function ProctorPage() {
         });
       });
 
-      return () => { socket.off('new_event'); socket.off('student_submitted'); socket.off('student_progress'); };
+      return () => { socket.off('new_event'); socket.off('remote_desktop_alert'); socket.off('student_submitted'); socket.off('student_progress'); };
     }
   }, [socket, examId, user]);
 
@@ -289,6 +301,43 @@ export default function ProctorPage() {
 
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--surface-0)' }}>
+
+      {/* ── Remote Desktop Alert Banners ── */}
+      {rdAlerts.length > 0 && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999, display: 'flex', flexDirection: 'column', gap: 0 }}>
+          {rdAlerts.map(alert => (
+            <div key={alert.id} style={{
+              background: 'linear-gradient(135deg, #7f1d1d, #991b1b)',
+              borderBottom: '2px solid #ef4444',
+              padding: '10px 20px',
+              display: 'flex', alignItems: 'center', gap: 12,
+              animation: 'pulse 1.5s ease-in-out infinite',
+            }}>
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Monitor size={16} color="#fca5a5" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  🚨 REMOTE DESKTOP / SCREEN SHARING DETECTED
+                </div>
+                <div style={{ fontSize: 12, color: '#fecaca', marginTop: 2 }}>
+                  <strong>{alert.studentName}</strong> ({alert.studentEmail}) — {alert.description}
+                </div>
+              </div>
+              <span style={{ fontSize: 10, color: '#fca5a5', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>
+                {new Date(alert.detectedAt).toLocaleTimeString()}
+              </span>
+              <button
+                onClick={() => setRdAlerts(prev => prev.filter(a => a.id !== alert.id))}
+                style={{ background: 'rgba(239,68,68,0.2)', border: '1px solid #ef4444', borderRadius: 6, cursor: 'pointer', color: '#fca5a5', display: 'flex', padding: '4px 8px', flexShrink: 0 }}
+              >
+                <X size={14} /> Dismiss
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Header */}
       <header className="app-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
