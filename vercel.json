@@ -16,23 +16,16 @@
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "/server/server.js"
+      "dest": "server/server.js"
     },
     {
       "src": "/socket.io/(.*)",
-      "dest": "/server/server.js"
-    },
-    {
-      "src": "/assets/(.*)",
-      "dest": "/client/dist/assets/$1"
-    },
-    {
-      "src": "/(favicon\\.ico|vite\\.svg|manifest\\.json)",
-      "dest": "/client/dist/$1"
+      "dest": "server/server.js"
     },
     {
       "src": "/(.*)",
-      "dest": "/client/dist/index.html"
+      "dest": "client/$1"
     }
   ]
 }
+	
