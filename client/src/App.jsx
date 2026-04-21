@@ -17,7 +17,13 @@ class ErrorBoundary extends Component {
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-0)', gap: 16 }}>
           <span style={{ fontSize: 48 }}>⚠️</span>
           <h2 style={{ color: 'var(--text-0)', fontSize: 'var(--text-xl)' }}>Something went wrong</h2>
-          <p style={{ color: 'var(--text-3)', fontSize: 'var(--text-base)' }}>{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <p style={{ color: 'var(--text-3)', fontSize: 'var(--text-base)' }}>
+            {typeof this.state.error?.message === 'string'
+              ? this.state.error.message
+              : this.state.error
+              ? JSON.stringify(this.state.error, null, 2)
+              : 'An unexpected error occurred.'}
+          </p>
           <button className="btn btn-primary" onClick={() => window.location.href = '/login'}>Go to Login</button>
         </div>
       );

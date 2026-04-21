@@ -18,14 +18,22 @@ export function SocketProvider({ children }) {
       return;
     }
 
+    // On Vercel serverless, WebSockets are not supported — use polling only in production
+    const isProduction = import.meta.env.PROD;
+
     // Connect socket
     const newSocket = io('/', {
-      transports: ['websocket', 'polling'],
+      transports: isProduction ? ['polling'] : ['websocket', 'polling'],
       autoConnect: true,
     });
 
     newSocket.on('connect', () => {
       console.log('🔌 Socket connected:', newSocket.id);
+    });
+
+    newSocket.on('connect_error', (err) => {
+      // Log gracefully — do NOT re-throw, as that causes React error #31
+      console.warn('🔌 Socket connection error:', err?.message || err);
     });
 
     newSocket.on('disconnect', () => {
