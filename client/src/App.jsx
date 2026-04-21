@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { Component } from 'react';
 import { AuthProvider, useAuth } from './AuthContext';
 import { SocketProvider } from './SocketContext';
 import LoginPage   from './pages/LoginPage';
@@ -6,6 +7,24 @@ import LobbyPage   from './pages/LobbyPage';
 import ExamPage    from './pages/ExamPage';
 import ResultPage  from './pages/ResultPage';
 import ProctorPage from './pages/ProctorPage';
+
+class ErrorBoundary extends Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(err) { return { error: err }; }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-0)', gap: 16 }}>
+          <span style={{ fontSize: 48 }}>⚠️</span>
+          <h2 style={{ color: 'var(--text-0)', fontSize: 'var(--text-xl)' }}>Something went wrong</h2>
+          <p style={{ color: 'var(--text-3)', fontSize: 'var(--text-base)' }}>{this.state.error?.message || 'An unexpected error occurred.'}</p>
+          <button className="btn btn-primary" onClick={() => window.location.href = '/login'}>Go to Login</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function ProtectedRoute({ role, children }) {
   const { user, loading } = useAuth();
@@ -49,12 +68,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <AuthProvider>
-        <SocketProvider>
-          <AppRoutes />
-        </SocketProvider>
-      </AuthProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <AuthProvider>
+          <SocketProvider>
+            <AppRoutes />
+          </SocketProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
