@@ -22,7 +22,8 @@ export function SocketProvider({ children }) {
     const isProduction = import.meta.env.PROD;
 
     // Connect socket
-    const newSocket = io('/', {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+    const newSocket = io(backendUrl, {
       transports: isProduction ? ['polling'] : ['websocket', 'polling'],
       autoConnect: true,
     });
