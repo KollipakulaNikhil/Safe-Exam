@@ -863,7 +863,7 @@ export default function ExamPage() {
     if (!sid) return;
     setSubmitting(true);
     try {
-      await apiSubmitExam(sid);
+      const res = await apiSubmitExam(sid);
       const sock = socketRef.current;
       const eid = examIdRef.current;
       if (sock && eid) {
@@ -873,7 +873,11 @@ export default function ExamPage() {
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
-      localStorage.setItem('examguard_result', JSON.stringify({ submissionId: sid }));
+      // Store both submissionId AND the full result so ResultPage doesn't need another API call
+      localStorage.setItem('examguard_result', JSON.stringify({
+        submissionId: sid,
+        result: res.data.result || null,
+      }));
       localStorage.removeItem('examguard_submission');
       navigate('/result');
     } catch (err) {
