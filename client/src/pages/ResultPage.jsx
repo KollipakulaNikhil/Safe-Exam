@@ -17,7 +17,16 @@ export default function ResultPage() {
     const stored = localStorage.getItem('examguard_result');
     if (!stored) { navigate('/lobby'); return; }
 
-    const { submissionId } = JSON.parse(stored);
+    const { submissionId, result: cachedResult } = JSON.parse(stored);
+
+    // If we already have the full result from the submit response, use it directly
+    if (cachedResult) {
+      setResult(cachedResult);
+      setLoading(false);
+      return;
+    }
+
+    // Fallback: fetch from API (e.g. if page was refreshed)
     getResult(submissionId)
       .then(res => setResult(res.data))
       .catch(err => {
