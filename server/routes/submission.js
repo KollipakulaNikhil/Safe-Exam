@@ -150,16 +150,38 @@ router.post('/:id/upload', protect, requireRole('student'), upload.single('file'
 // PUT /api/submission/:id/submit — submit exam + auto-grade MCQs
 router.put('/:id/submit', protect, requireRole('student'), async (req, res) => {
   try {
-    const submission = await Submission.findOne({
+    // Check if already submitted — return existing result directly
+    const existingSubmission = await Submission.findOne({
       _id: req.params.id,
       student: req.user._id,
-      status: 'in-progress',
-    });
+    }).populate('exam', 'name subject duration');
 
-    if (!submission) return res.status(404).json({ error: 'Active submission not found' });
+    if (!existingSubmission) return res.status(404).json({ error: 'Submission not found' });
 
-    const exam = await Exam.findById(submission.exam);
-    if (!exam) return res.status(404).json({ error: 'Exam not found' });
+    if (existingSubmission.status === 'submitted') {
+      // Already submitted — return existing result so the UI can proceed
+      const events = await Event.find({
+        submission: existingSubmission._id,
+        severity: { $in: ['WARN', 'CRITICAL'] },
+      }).sort({ createdAt: 1 });
+      const integrityLog = events.map(e => `${e.type} at ${new Date(e.createdAt).toLocaleTimeString()}`);
+      const durationMs = existingSubmission.submittedAt
+        ? existingSubmission.submittedAt - existingSubmission.startedAt
+        : 0;
+      return res.json({
+        message: 'Exam already submitted',
+        submissionId: existingSubmission._id,
+        score: existingSubmission.score,
+        result: {
+          submission: existingSubmission,
+          duration: `${Math.round(durationMs / 60000)} minutes`,
+          integrityLog,
+        },
+      });
+    }
+
+    const submission = existingSubmission;
+    const exam = submission.exam; // already populated
 
     // Auto-grade MCQs
     let totalMarks = 0;
@@ -240,10 +262,29 @@ router.put('/:id/submit', protect, requireRole('student'), async (req, res) => {
       description: `Exam submitted — Score: ${obtainedMarks}/${totalMarks} (${pct}%)`,
     });
 
+    // Get integrity events for the result
+    const events = await Event.find({
+      submission: submission._id,
+      severity: { $in: ['WARN', 'CRITICAL'] },
+    }).sort({ createdAt: 1 });
+    const integrityLog = events.map(e => `${e.type} at ${new Date(e.createdAt).toLocaleTimeString()}`);
+
+    // Re-fetch with populated fields for result
+    const populatedSubmission = await Submission.findById(submission._id)
+      .populate('student', 'name email')
+      .populate('exam', 'name subject duration');
+
+    const durationMs = populatedSubmission.submittedAt - populatedSubmission.startedAt;
+
     res.json({
       message: 'Exam submitted successfully',
       submissionId: submission._id,
       score: submission.score,
+      result: {
+        submission: populatedSubmission,
+        duration: `${Math.round(durationMs / 60000)} minutes`,
+        integrityLog,
+      },
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
