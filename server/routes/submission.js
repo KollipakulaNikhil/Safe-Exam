@@ -260,8 +260,15 @@ router.get('/:id/result', protect, async (req, res) => {
     if (!submission) return res.status(404).json({ error: 'Submission not found' });
 
     // Students can only see their own results
-    if (req.user.role === 'student' && submission.student._id.toString() !== req.user._id.toString()) {
+    // submission.student may be a populated object OR a raw ObjectId — handle both
+    const studentId = submission.student?._id || submission.student;
+    if (req.user.role === 'student' && studentId.toString() !== req.user._id.toString()) {
       return res.status(403).json({ error: 'Forbidden' });
+    }
+
+    // Submission must be submitted before result is available
+    if (submission.status !== 'submitted') {
+      return res.status(400).json({ error: 'Exam has not been submitted yet' });
     }
 
     // Get integrity events
