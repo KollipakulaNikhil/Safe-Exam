@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Axios instance with base URL and JWT interceptor
 const api = axios.create({
-  baseURL: '/api',
+  baseURL: import.meta.env.VITE_BACKEND_URL ? `${import.meta.env.VITE_BACKEND_URL}/api` : '/api',
   headers: { 'Content-Type': 'application/json' },
 });
 
