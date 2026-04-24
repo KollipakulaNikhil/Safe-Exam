@@ -11,6 +11,7 @@ export default function ResultPage() {
   const navigate = useNavigate();
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
   useEffect(() => {
     const stored = localStorage.getItem('examguard_result');
@@ -19,7 +20,10 @@ export default function ResultPage() {
     const { submissionId } = JSON.parse(stored);
     getResult(submissionId)
       .then(res => setResult(res.data))
-      .catch(() => navigate('/lobby'))
+      .catch(err => {
+        console.error('getResult failed:', err.response?.data || err.message);
+        setError(err.response?.data?.error || 'Failed to load your results. Please try again.');
+      })
       .finally(() => setLoading(false));
   }, [navigate]);
 
@@ -29,6 +33,22 @@ export default function ResultPage() {
         <div style={{ textAlign: 'center' }}>
           <span className="spinner" style={{ width: 32, height: 32 }} />
           <p style={{ marginTop: 16, color: 'var(--text-3)' }}>Loading results...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--surface-0)', padding: 24 }}>
+        <div style={{ textAlign: 'center', maxWidth: 480 }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'var(--danger-bg)', border: '2px solid var(--danger-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <XCircle size={30} color="var(--danger)" />
+          </div>
+          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Could Not Load Results</h2>
+          <p style={{ color: 'var(--text-2)', fontSize: 14, marginBottom: 8, lineHeight: 1.7 }}>{error}</p>
+          <p style={{ color: 'var(--text-3)', fontSize: 12, fontFamily: 'var(--font-mono)', marginBottom: 24 }}>Your exam was submitted. Please contact your proctor if this persists.</p>
+          <button className="btn btn-primary" onClick={() => { localStorage.removeItem('examguard_result'); navigate('/lobby'); }}>Back to Lobby</button>
         </div>
       </div>
     );
