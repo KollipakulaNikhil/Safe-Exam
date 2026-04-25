@@ -150,44 +150,48 @@ router.post('/:id/upload', protect, requireRole('student'), upload.single('file'
 // PUT /api/submission/:id/submit — submit exam + auto-grade MCQs
 router.put('/:id/submit', protect, requireRole('student'), async (req, res) => {
   try {
-    // Check if already submitted — return existing result directly
-    const existingSubmission = await Submission.findOne({
+    // Find the raw submission — NO populate, so submission.exam is a plain ObjectId
+    const submission = await Submission.findOne({
       _id: req.params.id,
       student: req.user._id,
-    }).populate('exam', 'name subject duration');
+    });
 
-    if (!existingSubmission) return res.status(404).json({ error: 'Submission not found' });
+    if (!submission) return res.status(404).json({ error: 'Submission not found' });
 
-    if (existingSubmission.status === 'submitted') {
-      // Already submitted — return existing result so the UI can proceed
+    // Handle already-submitted — return existing result so the UI can proceed
+    if (submission.status === 'submitted') {
       const events = await Event.find({
-        submission: existingSubmission._id,
+        submission: submission._id,
         severity: { $in: ['WARN', 'CRITICAL'] },
       }).sort({ createdAt: 1 });
       const integrityLog = events.map(e => `${e.type} at ${new Date(e.createdAt).toLocaleTimeString()}`);
-      const durationMs = existingSubmission.submittedAt
-        ? existingSubmission.submittedAt - existingSubmission.startedAt
+      const durationMs = submission.submittedAt
+        ? submission.submittedAt - submission.startedAt
         : 0;
+      const populatedSub = await Submission.findById(submission._id)
+        .populate('student', 'name email')
+        .populate('exam', 'name subject duration');
       return res.json({
         message: 'Exam already submitted',
-        submissionId: existingSubmission._id,
-        score: existingSubmission.score,
+        submissionId: submission._id,
+        score: submission.score,
         result: {
-          submission: existingSubmission,
+          submission: populatedSub,
           duration: `${Math.round(durationMs / 60000)} minutes`,
           integrityLog,
         },
       });
     }
 
-    const submission = existingSubmission;
-    const exam = submission.exam; // already populated
+    // Fetch full exam with questions for grading (submission.exam is raw ObjectId here)
+    const exam = await Exam.findById(submission.exam);
+    if (!exam) return res.status(404).json({ error: 'Exam not found' });
 
-    // Auto-grade MCQs
+    // Auto-grade
     let totalMarks = 0;
     let obtainedMarks = 0;
-    const mcqStats = { got: 0, of: 0, answered: 0, total: 0 };
-    const codeStats = { got: 0, of: 0, answered: 0, total: 0 };
+    const mcqStats    = { got: 0, of: 0, answered: 0, total: 0 };
+    const codeStats   = { got: 0, of: 0, answered: 0, total: 0 };
     const uploadStats = { got: 0, of: 0, uploaded: 0, total: 0 };
 
     for (const question of exam.questions) {
@@ -215,7 +219,6 @@ router.put('/:id/submit', protect, requireRole('student'), async (req, res) => {
         const ans = submission.answers.find(a => a.questionId.toString() === question._id.toString());
         if (ans && ans.codeAnswer) {
           codeStats.answered++;
-          // Give partial marks for code (mock: 80% of marks for any submitted code)
           const marks = Math.round(question.marks * 0.8);
           ans.marksObtained = marks;
           codeStats.got += marks;
@@ -227,7 +230,6 @@ router.put('/:id/submit', protect, requireRole('student'), async (req, res) => {
         const ans = submission.answers.find(a => a.questionId.toString() === question._id.toString());
         if (ans && ans.uploadedFile) {
           uploadStats.uploaded++;
-          // Give partial marks for uploads (mock: 40% of marks)
           const marks = Math.round(question.marks * 0.4);
           ans.marksObtained = marks;
           uploadStats.got += marks;
@@ -269,7 +271,7 @@ router.put('/:id/submit', protect, requireRole('student'), async (req, res) => {
     }).sort({ createdAt: 1 });
     const integrityLog = events.map(e => `${e.type} at ${new Date(e.createdAt).toLocaleTimeString()}`);
 
-    // Re-fetch with populated fields for result
+    // Re-fetch with populated fields for the result page
     const populatedSubmission = await Submission.findById(submission._id)
       .populate('student', 'name email')
       .populate('exam', 'name subject duration');
@@ -287,6 +289,7 @@ router.put('/:id/submit', protect, requireRole('student'), async (req, res) => {
       },
     });
   } catch (error) {
+    console.error('Submit error:', error);
     res.status(500).json({ error: error.message });
   }
 });
