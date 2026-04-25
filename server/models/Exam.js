@@ -24,10 +24,10 @@ const examSchema = new mongoose.Schema({
 
 // Virtual to get total questions
 examSchema.virtual('totalQuestions').get(function () {
-  return this.questions.length;
+  return (this.questions || []).length;
 });
 
 examSchema.set('toJSON', { virtuals: true });
 examSchema.set('toObject', { virtuals: true });
 
-export default mongoose.model('Exam', examSchema);
+export default mongoose.models.Exam || mongoose.model('Exam', examSchema);
